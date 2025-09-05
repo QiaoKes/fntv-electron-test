@@ -120,6 +120,20 @@ jobs:
         run: npm run compile
         timeout-minutes: 5
 
+      - name: Verify certificate file
+        if: runner.os == 'macOS'
+        run: |
+          echo "🔍 验证证书文件..."
+          if [ -f "build/electron-dev-cert.p12" ]; then
+            echo "✅ 证书文件存在: build/electron-dev-cert.p12"
+            # 检查证书内容（不显示敏感信息）
+            openssl pkcs12 -in build/electron-dev-cert.p12 -nokeys -noout -passin pass:fntv123456 2>/dev/null && echo "✅ 证书文件格式有效" || echo "❌ 证书文件格式无效"
+          else
+            echo "❌ 证书文件不存在: build/electron-dev-cert.p12"
+            ls -la build/
+            exit 1
+          fi
+
       - name: Import macOS certificate
         if: runner.os == 'macOS'
         run: |
@@ -147,19 +161,46 @@ jobs:
           # 设置证书可用于代码签名
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$TEMP_KEYCHAIN_PASSWORD" "$TEMP_KEYCHAIN_PATH"
           
-          # 验证证书导入
+          # 🔑 关键步骤：信任证书用于代码签名
+          echo "🛡️ 信任证书用于代码签名..."
+          # 首先从 keychain 中导出证书
+          security find-certificate -c "electron-dev-cert" -p "$TEMP_KEYCHAIN_PATH" > /tmp/electron-dev-cert.pem
+          
+          # 将证书添加到系统信任存储中
+          sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain /tmp/electron-dev-cert.pem
+          
+          # 或者直接在当前用户的 keychain 中信任
+          security add-trusted-cert -d -r trustAsRoot -k "$TEMP_KEYCHAIN_PATH" /tmp/electron-dev-cert.pem || true
+          
+          # 验证证书导入和信任状态
           echo "✅ 验证证书导入..."
           security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH"
           
-          # 获取证书的 SHA1 哈希值（更可靠的方法）
-          CERT_HASH=$(security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH" | grep "electron-dev-cert" | head -1 | awk '{print $2}')
-          echo "🆔 证书哈希值: $CERT_HASH"
+          # 获取证书的 SHA1 哈希值（修复提取逻辑）
+          CERT_OUTPUT=$(security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH" | grep "electron-dev-cert")
+          echo "🔍 完整证书输出: $CERT_OUTPUT"
           
-          # 如果哈希值为空，尝试获取第一个可用的证书
-          if [ -z "$CERT_HASH" ]; then
-            CERT_HASH=$(security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH" | head -1 | awk '{print $2}')
-            echo "🆔 使用第一个证书哈希值: $CERT_HASH"
+          # 提取哈希值（在括号前的部分）
+          CERT_HASH=$(echo "$CERT_OUTPUT" | sed -n 's/^[[:space:]]*[0-9]*)[[:space:]]*\([A-F0-9]*\)[[:space:]].*/\1/p')
+          echo "🆔 提取的证书哈希值: $CERT_HASH"
+          
+          # 如果哈希值为空或无效，尝试不同的提取方法
+          if [ -z "$CERT_HASH" ] || [ "$CERT_HASH" = "valid" ]; then
+            echo "⚠️ 第一次提取失败，尝试其他方法..."
+            # 尝试提取第一个有效证书的哈希值
+            CERT_HASH=$(security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH" | head -1 | sed -n 's/^[[:space:]]*[0-9]*)[[:space:]]*\([A-F0-9][A-F0-9]*\)[[:space:]].*/\1/p')
+            echo "🆔 使用备用方法提取的哈希值: $CERT_HASH"
           fi
+          
+          # 最后一种方法：直接使用证书名称
+          if [ -z "$CERT_HASH" ] || [ "$CERT_HASH" = "valid" ]; then
+            echo "⚠️ 哈希值提取失败，使用证书名称..."
+            CERT_HASH="electron-dev-cert"
+            echo "🆔 使用证书名称: $CERT_HASH"
+          fi
+          
+          # 清理临时文件
+          rm -f /tmp/electron-dev-cert.pem
           
           # 导出环境变量供后续步骤使用
           echo "TEMP_KEYCHAIN_PATH=$TEMP_KEYCHAIN_PATH" >> $GITHUB_ENV
@@ -189,7 +230,7 @@ jobs:
           elif [ "${{ matrix.platform }}" = "macos" ]; then
             echo "🔧 配置 macOS 代码签名环境..."
             echo "使用临时 keychain: $TEMP_KEYCHAIN_PATH"
-            echo "使用证书哈希值: $CERT_HASH"
+            echo "使用证书标识符: $CERT_HASH"
             
             # 确保临时 keychain 仍然解锁
             security unlock-keychain -p "$TEMP_KEYCHAIN_PASSWORD" "$TEMP_KEYCHAIN_PATH"
@@ -199,22 +240,42 @@ jobs:
             security list-keychains -d user
             echo "🔍 临时 keychain 中的签名身份:"
             security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH"
+            echo "🔍 系统中所有可用的签名身份:"
+            security find-identity -v -p codesigning
             
-            # 设置 electron-builder 环境变量
-            export CSC_KEYCHAIN="$TEMP_KEYCHAIN_PATH"
-            export CSC_LINK="build/electron-dev-cert.p12"
-            export CSC_KEY_PASSWORD="fntv123456"
-            export CSC_IDENTITY_AUTO_DISCOVERY=false
-            export CSC_NAME="$CERT_HASH"
-            # 允许使用不受信任的证书进行开发构建
-            export CSC_ALLOW_UNTRUSTED_CERTS=true
+            # 检查是否有可用的签名身份
+            IDENTITY_COUNT=$(security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH" | grep -c "electron-dev-cert" || echo "0")
+            echo "🔢 找到 $IDENTITY_COUNT 个 electron-dev-cert 证书"
             
-            echo "🏗️ 开始构建 macOS 应用..."
-            echo "环境变量配置:"
-            echo "CSC_KEYCHAIN=$CSC_KEYCHAIN"
-            echo "CSC_LINK=$CSC_LINK"
-            echo "CSC_NAME=$CSC_NAME"
-            echo "CSC_ALLOW_UNTRUSTED_CERTS=$CSC_ALLOW_UNTRUSTED_CERTS"
+            if [ "$IDENTITY_COUNT" -gt 0 ]; then
+              echo "✅ 找到有效证书，启用代码签名"
+              # 设置 electron-builder 环境变量
+              export CSC_KEYCHAIN="$TEMP_KEYCHAIN_PATH"
+              export CSC_LINK="build/electron-dev-cert.p12"
+              export CSC_KEY_PASSWORD="fntv123456"
+              export CSC_NAME="$CERT_HASH"
+              # 启用 DMG 签名
+              export CSC_INSTALLER_LINK="$CSC_LINK"
+              export CSC_INSTALLER_KEY_PASSWORD="$CSC_KEY_PASSWORD"
+              export CSC_INSTALLER_KEYCHAIN="$TEMP_KEYCHAIN_PATH"
+              
+              echo "🏗️ 开始构建 macOS 应用（启用代码签名和 DMG 签名）..."
+              echo "环境变量配置:"
+              echo "CSC_KEYCHAIN=$CSC_KEYCHAIN"
+              echo "CSC_LINK=$CSC_LINK"
+              echo "CSC_NAME=$CSC_NAME"
+              echo "CSC_INSTALLER_LINK=$CSC_INSTALLER_LINK"
+              echo "CSC_INSTALLER_KEYCHAIN=$CSC_INSTALLER_KEYCHAIN"
+            else
+              echo "⚠️ 未找到有效证书，跳过代码签名"
+              # 禁用代码签名
+              export CSC_IDENTITY_AUTO_DISCOVERY=false
+              unset CSC_LINK
+              unset CSC_KEY_PASSWORD
+              unset CSC_NAME
+              
+              echo "🏗️ 开始构建 macOS 应用（无代码签名）..."
+            fi
             
             npm run build:mac
           else
@@ -235,7 +296,15 @@ jobs:
       - name: Cleanup macOS keychain
         if: runner.os == 'macOS' && always()
         run: |
-          echo "🧹 清理临时 keychain..."
+          echo "🧹 清理临时 keychain 和信任设置..."
+          
+          # 尝试从系统信任存储中移除证书
+          if sudo security find-certificate -c "electron-dev-cert" /Library/Keychains/System.keychain >/dev/null 2>&1; then
+            echo "📄 从系统信任存储中移除证书..."
+            sudo security delete-certificate -c "electron-dev-cert" /Library/Keychains/System.keychain || true
+          fi
+          
+          # 清理临时 keychain
           if [ -n "$TEMP_KEYCHAIN_PATH" ] && [ -f "$TEMP_KEYCHAIN_PATH" ]; then
             # 锁定并删除临时 keychain
             security lock-keychain "$TEMP_KEYCHAIN_PATH" || true
