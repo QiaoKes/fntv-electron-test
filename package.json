@@ -107,7 +107,6 @@
         "dmg": {
             "title": "飞牛影视 ${version}",
             "icon": "build/icon.icns",
-            "background": "build/dmg-background.png",
             "window": {
                 "width": 540,
                 "height": 380
