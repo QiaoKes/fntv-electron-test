@@ -120,59 +120,6 @@ jobs:
         run: npm run compile
         timeout-minutes: 5
 
-      - name: Import macOS certificate in temporary keychain
-        if: runner.os == 'macOS'
-        run: |
-          echo "🔑 创建临时 keychain..."
-
-          TEMP_KEYCHAIN="$RUNNER_TEMP/temp.keychain"
-          KEYCHAIN_PASS="fntv123456"
-
-          # 创建临时 keychain
-          security create-keychain -p "$KEYCHAIN_PASS" "$TEMP_KEYCHAIN"
-          security default-keychain -s "$TEMP_KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PASS" "$TEMP_KEYCHAIN"
-          security set-keychain-settings -t 3600 -l "$TEMP_KEYCHAIN"
-
-          echo "🔑 导入证书..."
-          security import build/electron-dev-cert.p12 \
-            -k "$TEMP_KEYCHAIN" \
-            -P "fntv123456" \
-            -T /usr/bin/codesign \
-            -A
-
-          echo "🔑 设置证书可用于 codesign..."
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" "$TEMP_KEYCHAIN"
-
-          echo "🔍 查看可用签名身份..."
-          security find-identity -v -p codesigning "$TEMP_KEYCHAIN"
-
-        env:
-          KEYCHAIN_PASS: fntv123456
-
-      - name: Build application (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          npm run build:mac
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: build/electron-dev-cert.p12
-          CSC_KEY_PASSWORD: fntv123456
-          # 指定临时 keychain 给 electron-builder
-          ELECTRON_BUILDER_KEYCHAIN: "$RUNNER_TEMP/temp.keychain"
-
-      - name: Debug signing identities
-        if: runner.os == 'macOS'
-        run: |
-          echo "🔍 检查所有签名身份..."
-          security find-identity -v -p codesigning
-          echo ""
-          echo "🔍 查找 electron-dev-cert 证书..."
-          security find-identity -v -p codesigning | grep "electron-dev-cert" || echo "未找到 electron-dev-cert"
-          echo ""
-          echo "🔍 检查证书详情..."
-          security find-certificate -c "electron-dev-cert" -p ~/Library/Keychains/login.keychain-db | openssl x509 -text -noout | head -20 || echo "无法获取证书详情"
-
       - name: Build application
         run: |
           if [ "${{ matrix.platform }}" = "windows" ]; then
