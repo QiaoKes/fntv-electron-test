@@ -123,38 +123,86 @@ jobs:
       - name: Import macOS certificate
         if: runner.os == 'macOS'
         run: |
-          # 导入证书并指定名称
-          security import build/electron-dev-cert.p12 -k ~/Library/Keychains/login.keychain-db -P "fntv123456" -T /usr/bin/codesign -A
+          # 创建临时 keychain
+          TEMP_KEYCHAIN="temp-build.keychain-db"
+          TEMP_KEYCHAIN_PATH="$HOME/Library/Keychains/$TEMP_KEYCHAIN"
+          TEMP_KEYCHAIN_PASSWORD="temp-build-password"
           
-          # 解锁 keychain
-          security unlock-keychain -p "$KEYCHAIN_PASS" ~/Library/Keychains/login.keychain-db
-
+          echo "🔐 创建临时 keychain: $TEMP_KEYCHAIN"
+          security create-keychain -p "$TEMP_KEYCHAIN_PASSWORD" "$TEMP_KEYCHAIN_PATH"
+          
+          # 将临时 keychain 添加到搜索列表（而不是设为默认）
+          security list-keychains -d user -s "$TEMP_KEYCHAIN_PATH" $(security list-keychains -d user | sed s/\"//g)
+          
+          # 解锁临时 keychain
+          security unlock-keychain -p "$TEMP_KEYCHAIN_PASSWORD" "$TEMP_KEYCHAIN_PATH"
+          
+          # 设置 keychain 超时（避免自动锁定）
+          security set-keychain-settings -t 3600 -u "$TEMP_KEYCHAIN_PATH"
+          
+          # 导入证书到临时 keychain
+          echo "📄 导入证书到临时 keychain..."
+          security import build/electron-dev-cert.p12 -k "$TEMP_KEYCHAIN_PATH" -P "fntv123456" -T /usr/bin/codesign -A
+          
           # 设置证书可用于代码签名
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" ~/Library/Keychains/login.keychain-db
-          
-          # 明确信任这个证书用于代码签名
-          security add-trusted-cert -d -r trustRoot -k ~/Library/Keychains/login.keychain-db build/electron-dev-cert.p12 || true
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$TEMP_KEYCHAIN_PASSWORD" "$TEMP_KEYCHAIN_PATH"
           
           # 验证证书导入
-          security find-identity -v -p codesigning
+          echo "✅ 验证证书导入..."
+          security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH"
+          
+          # 获取证书的完整标识符
+          CERT_IDENTITY=$(security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH" | grep "electron-dev-cert" | head -1 | sed 's/[[:space:]]*[0-9]*)[[:space:]]*\([^[:space:]]*\).*/\1/')
+          echo "🆔 证书标识符: $CERT_IDENTITY"
+          
+          # 导出环境变量供后续步骤使用
+          echo "TEMP_KEYCHAIN_PATH=$TEMP_KEYCHAIN_PATH" >> $GITHUB_ENV
+          echo "TEMP_KEYCHAIN_PASSWORD=$TEMP_KEYCHAIN_PASSWORD" >> $GITHUB_ENV
+          echo "CERT_IDENTITY=$CERT_IDENTITY" >> $GITHUB_ENV
 
       - name: Debug signing identities
         if: runner.os == 'macOS'
         run: |
-          echo "🔍 检查所有签名身份..."
-          security find-identity -v -p codesigning
+          echo "🔍 检查临时 keychain 中的签名身份..."
+          security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH"
           echo ""
           echo "🔍 查找 electron-dev-cert 证书..."
-          security find-identity -v -p codesigning | grep "electron-dev-cert" || echo "未找到 electron-dev-cert"
+          security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH" | grep "electron-dev-cert" || echo "未找到 electron-dev-cert"
           echo ""
           echo "🔍 检查证书详情..."
-          security find-certificate -c "electron-dev-cert" -p ~/Library/Keychains/login.keychain-db | openssl x509 -text -noout | head -20 || echo "无法获取证书详情"
+          security find-certificate -c "electron-dev-cert" -p "$TEMP_KEYCHAIN_PATH" | openssl x509 -text -noout | head -20 || echo "无法获取证书详情"
 
       - name: Build application
         run: |
           if [ "${{ matrix.platform }}" = "windows" ]; then
             npm run build:win
           elif [ "${{ matrix.platform }}" = "macos" ]; then
+            echo "🔧 配置 macOS 代码签名环境..."
+            echo "使用临时 keychain: $TEMP_KEYCHAIN_PATH"
+            echo "使用证书标识符: $CERT_IDENTITY"
+            
+            # 确保临时 keychain 仍然解锁
+            security unlock-keychain -p "$TEMP_KEYCHAIN_PASSWORD" "$TEMP_KEYCHAIN_PATH"
+            
+            # 验证 keychain 和证书状态
+            echo "🔍 当前 keychain 列表:"
+            security list-keychains -d user
+            echo "🔍 可用的签名身份:"
+            security find-identity -v -p codesigning
+            
+            # 设置 electron-builder 环境变量
+            export CSC_KEYCHAIN="$TEMP_KEYCHAIN_PATH"
+            export CSC_LINK="build/electron-dev-cert.p12"
+            export CSC_KEY_PASSWORD="fntv123456"
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            export CSC_NAME="$CERT_IDENTITY"
+            
+            echo "🏗️ 开始构建 macOS 应用..."
+            echo "环境变量配置:"
+            echo "CSC_KEYCHAIN=$CSC_KEYCHAIN"
+            echo "CSC_LINK=$CSC_LINK"
+            echo "CSC_NAME=$CSC_NAME"
+            
             npm run build:mac
           else
             npm run build:linux
@@ -163,8 +211,6 @@ jobs:
         timeout-minutes: 15
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ matrix.platform == 'macos' && format('{0}/build/electron-dev-cert.p12', github.workspace) || '' }}
-          CSC_KEY_PASSWORD: ${{ matrix.platform == 'macos' && 'fntv123456' || '' }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -172,6 +218,19 @@ jobs:
           name: ${{ matrix.platform }}-build
           path: release/
           retention-days: 30
+
+      - name: Cleanup macOS keychain
+        if: runner.os == 'macOS' && always()
+        run: |
+          echo "🧹 清理临时 keychain..."
+          if [ -n "$TEMP_KEYCHAIN_PATH" ] && [ -f "$TEMP_KEYCHAIN_PATH" ]; then
+            # 锁定并删除临时 keychain
+            security lock-keychain "$TEMP_KEYCHAIN_PATH" || true
+            security delete-keychain "$TEMP_KEYCHAIN_PATH" || true
+            echo "✅ 临时 keychain 已清理"
+          else
+            echo "⚠️ 未找到临时 keychain 或路径为空"
+          fi
 
   release:
     name: Create Release
