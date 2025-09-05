@@ -126,7 +126,11 @@ function stopConfigCheck(): void {
 // 插件初始化函数
 function init(): void {
     logger.info('Initializing MPV Config Plugin...');
-    
+    // 只在macOS和Linux上执行
+    if (process.platform === 'win32') {
+        return;
+    }
+
     startConfigCheck();
     // 应用退出前停止检查
     app.on('before-quit', () => {
