@@ -151,14 +151,20 @@ jobs:
           echo "✅ 验证证书导入..."
           security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH"
           
-          # 获取证书的完整标识符
-          CERT_IDENTITY=$(security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH" | grep "electron-dev-cert" | head -1 | sed 's/[[:space:]]*[0-9]*)[[:space:]]*\([^[:space:]]*\).*/\1/')
-          echo "🆔 证书标识符: $CERT_IDENTITY"
+          # 获取证书的 SHA1 哈希值（更可靠的方法）
+          CERT_HASH=$(security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH" | grep "electron-dev-cert" | head -1 | awk '{print $2}')
+          echo "🆔 证书哈希值: $CERT_HASH"
+          
+          # 如果哈希值为空，尝试获取第一个可用的证书
+          if [ -z "$CERT_HASH" ]; then
+            CERT_HASH=$(security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH" | head -1 | awk '{print $2}')
+            echo "🆔 使用第一个证书哈希值: $CERT_HASH"
+          fi
           
           # 导出环境变量供后续步骤使用
           echo "TEMP_KEYCHAIN_PATH=$TEMP_KEYCHAIN_PATH" >> $GITHUB_ENV
           echo "TEMP_KEYCHAIN_PASSWORD=$TEMP_KEYCHAIN_PASSWORD" >> $GITHUB_ENV
-          echo "CERT_IDENTITY=$CERT_IDENTITY" >> $GITHUB_ENV
+          echo "CERT_HASH=$CERT_HASH" >> $GITHUB_ENV
 
       - name: Debug signing identities
         if: runner.os == 'macOS'
@@ -171,6 +177,10 @@ jobs:
           echo ""
           echo "🔍 检查证书详情..."
           security find-certificate -c "electron-dev-cert" -p "$TEMP_KEYCHAIN_PATH" | openssl x509 -text -noout | head -20 || echo "无法获取证书详情"
+          echo ""
+          echo "🔍 提取的证书哈希值: $CERT_HASH"
+          echo "🔍 完整证书信息:"
+          security find-identity -p codesigning "$TEMP_KEYCHAIN_PATH" | grep "$CERT_HASH" || echo "未找到对应哈希的证书"
 
       - name: Build application
         run: |
@@ -179,7 +189,7 @@ jobs:
           elif [ "${{ matrix.platform }}" = "macos" ]; then
             echo "🔧 配置 macOS 代码签名环境..."
             echo "使用临时 keychain: $TEMP_KEYCHAIN_PATH"
-            echo "使用证书标识符: $CERT_IDENTITY"
+            echo "使用证书哈希值: $CERT_HASH"
             
             # 确保临时 keychain 仍然解锁
             security unlock-keychain -p "$TEMP_KEYCHAIN_PASSWORD" "$TEMP_KEYCHAIN_PATH"
@@ -187,21 +197,24 @@ jobs:
             # 验证 keychain 和证书状态
             echo "🔍 当前 keychain 列表:"
             security list-keychains -d user
-            echo "🔍 可用的签名身份:"
-            security find-identity -v -p codesigning
+            echo "🔍 临时 keychain 中的签名身份:"
+            security find-identity -v -p codesigning "$TEMP_KEYCHAIN_PATH"
             
             # 设置 electron-builder 环境变量
             export CSC_KEYCHAIN="$TEMP_KEYCHAIN_PATH"
             export CSC_LINK="build/electron-dev-cert.p12"
             export CSC_KEY_PASSWORD="fntv123456"
             export CSC_IDENTITY_AUTO_DISCOVERY=false
-            export CSC_NAME="$CERT_IDENTITY"
+            export CSC_NAME="$CERT_HASH"
+            # 允许使用不受信任的证书进行开发构建
+            export CSC_ALLOW_UNTRUSTED_CERTS=true
             
             echo "🏗️ 开始构建 macOS 应用..."
             echo "环境变量配置:"
             echo "CSC_KEYCHAIN=$CSC_KEYCHAIN"
             echo "CSC_LINK=$CSC_LINK"
             echo "CSC_NAME=$CSC_NAME"
+            echo "CSC_ALLOW_UNTRUSTED_CERTS=$CSC_ALLOW_UNTRUSTED_CERTS"
             
             npm run build:mac
           else
