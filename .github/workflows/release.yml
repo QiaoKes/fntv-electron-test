@@ -177,8 +177,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.package.outputs.version }}-${{ steps.commit.outputs.sha }}
-          name: 飞牛影视 v${{ steps.package.outputs.version }} (${{ steps.commit.outputs.sha }})
+          tag_name: v${{ steps.package.outputs.version }}
+          name: 飞牛影视 v${{ steps.package.outputs.version }}
           body: |
             ## 🎬 飞牛影视 v${{ steps.package.outputs.version }}
             
@@ -197,7 +197,7 @@ jobs:
             ### 📥 下载指南
             | 平台 | 文件类型 | 说明 |
             |------|----------|------|
-            | 🪟 Windows | `.exe` | 安装程序，双击运行 |
+            | 💻 Windows | `.exe` | 安装程序，双击运行 |
             | 🍎 macOS | `.dmg` | 磁盘镜像，拖拽到应用程序文件夹 |
             | 🐧 Linux | `.AppImage` | 便携应用，添加执行权限后直接运行 |
             
