@@ -62,8 +62,6 @@
                 }
             ],
             "icon": "build/icon.ico",
-            "publisherName": "飞牛影视",
-            "sign": null,
             "extraFiles": [
                 {
                     "from": "third_party/fntv-mpv",
