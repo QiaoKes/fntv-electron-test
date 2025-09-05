@@ -46,6 +46,15 @@ jobs:
         run: npm install --no-optional --no-audit --no-fund
         timeout-minutes: 10
 
+      - name: Install macOS specific dependencies
+        if: runner.os == 'macOS'
+        run: |
+          # 确保 dmg-license 正确安装
+          npm install dmg-license --save-dev
+          # 安装额外的 macOS 构建依赖
+          npm install --no-optional
+        timeout-minutes: 5
+
       - name: Setup Python (for native modules)
         uses: actions/setup-python@v5
         with:
