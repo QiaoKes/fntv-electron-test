@@ -3,7 +3,7 @@
 ![Electron](https://img.shields.io/badge/Electron-47848F?style=for-the-badge&logo=Electron&logoColor=white)
 ![Vue](https://img.shields.io/badge/Vue.js-4FC08D?style=for-the-badge&logo=vue.js&logoColor=white)
 
-飞牛影视桌面客户端，基于Electron构建，提供更好的桌面体验和增强功能。
+飞牛影视桌面客户端，基于Electron构建，提供更好的桌面体验和增强功能。xx
 
 <img src="resource/docs/switch.png" width="90%">
 <img src="resource/docs/simple.png" width="90%">
