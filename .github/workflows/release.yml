@@ -36,20 +36,8 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Configure npm
-        run: |
-          npm config set progress false
-          npm config set loglevel error
-          npm config set fetch-retry-mintimeout 20000
-          npm config set fetch-retry-maxtimeout 120000
-          npm config set fetch-timeout 600000
-
-      - name: Configure npm (Windows specific)
-        if: runner.os == 'Windows'
-        run: npm config set msvs_version 2022
-
       - name: Install dependencies
-        run: npm install --no-optional --no-audit --no-fund --verbose
+        run: npm install --no-optional --no-audit --no-fund
         timeout-minutes: 10
 
       - name: Setup Python (for native modules)
