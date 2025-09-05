@@ -10,14 +10,13 @@
         "clean": "rimraf dest",
         "build": "tsc && electron-builder",
         "build:win": "tsc && electron-builder --win",
-        "build:mac": "npm run setup:signing && tsc && electron-builder --mac",
+        "build:mac": "ross-env CSC_LINK=build/electron-dev-cert.p12 CSC_KEY_PASSWORD= tsc && electron-builder --mac",
         "build:linux": "tsc && electron-builder --linux",
         "build:all": "tsc && electron-builder --win --mac --linux",
         "build:mac-arm64": "tsc && electron-builder --mac --arm64",
         "build:mac-x64": "tsc && electron-builder --mac --x64",
         "build:linux-arm64": "tsc && electron-builder --linux --arm64",
-        "build:linux-x64": "tsc && electron-builder --linux --x64",
-        "setup:signing": "bash scripts/setup-macos-signing.sh"
+        "build:linux-x64": "tsc && electron-builder --linux --x64"
     },
     "author": "tracing",
     "devDependencies": {
@@ -92,7 +91,7 @@
             "gatekeeperAssess": false,
             "entitlements": "build/entitlements.mac.plist",
             "entitlementsInherit": "build/entitlements.mac.plist",
-            "identity": "Developer ID Application",
+            "identity": "electron-dev-cert",
             "type": "development",
             "extraFiles": [
                 {
