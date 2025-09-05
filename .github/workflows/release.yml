@@ -72,8 +72,8 @@ jobs:
         run: |
           echo "🔄 Downloading latest fntv-mpv-config..."
           
-          # 获取最新 release 的下载链接
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/QiaoKes/fntv-mpv-config/releases/latest)
+          # 获取最新 release 的下载链接 (使用认证以避免速率限制)
+          LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/QiaoKes/fntv-mpv-config/releases/latest)
           echo "Latest release info: $LATEST_RELEASE"
           DOWNLOAD_URL=$(echo "$LATEST_RELEASE" | sed -n 's/.*"browser_download_url": "\(https[^"]*\.zip\)".*/\1/p')
 
@@ -86,8 +86,8 @@ jobs:
           else
             echo "📦 Downloading from: $DOWNLOAD_URL"
             
-            # 下载文件
-            curl -L -o mpv-config.zip "$DOWNLOAD_URL"
+            # 下载文件 (使用认证下载)
+            curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -o mpv-config.zip "$DOWNLOAD_URL"
             mkdir -p third_party/fntv-mpv
             
             # 根据平台使用不同的解压命令
@@ -113,6 +113,8 @@ jobs:
             find third_party/fntv-mpv -type d | head -5
           fi
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compile TypeScript
         run: npm run compile
