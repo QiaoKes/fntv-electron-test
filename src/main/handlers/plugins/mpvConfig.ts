@@ -23,8 +23,21 @@ function getMpvConfigDir(): string {
 
 // 获取应用中的portable_config目录
 function getPortableConfigDir(): string {
-    const appPath = app.getAppPath();
-    return path.join(appPath, 'third_party', 'fntv-mpv', 'portable_config');
+    if (process.platform === 'darwin') {
+        // macOS: third_party目录在应用包的Contents目录下，而不是在app.asar内
+        // 构建时只复制了portable_config目录内容到third_party/fntv-mpv/portable_config
+        const appPath = app.getAppPath();
+        const contentsPath = path.dirname(path.dirname(appPath)); // 从app.asar向上两级到Contents
+        return path.join(contentsPath, 'third_party', 'fntv-mpv', 'portable_config');
+    } else if (process.platform === 'win32') {
+        // Windows: 复制了完整的fntv-mpv目录，包含portable_config子目录
+        const appPath = app.getAppPath();
+        return path.join(path.dirname(appPath), 'third_party', 'fntv-mpv', 'portable_config');
+    } else {
+        // Linux: 构建时只复制了portable_config目录内容到third_party/fntv-mpv/portable_config
+        const appPath = app.getAppPath();
+        return path.join(path.dirname(appPath), 'third_party', 'fntv-mpv', 'portable_config');
+    }
 }
 
 // 递归复制目录
@@ -113,11 +126,7 @@ function stopConfigCheck(): void {
 // 插件初始化函数
 function init(): void {
     logger.info('Initializing MPV Config Plugin...');
-    // 只在macOS和Linux上执行
-    if (process.platform === 'win32') {
-        return;
-    }
-
+    
     startConfigCheck();
     // 应用退出前停止检查
     app.on('before-quit', () => {
