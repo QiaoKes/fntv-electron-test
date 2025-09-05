@@ -120,7 +120,7 @@ jobs:
       - name: Import macOS certificate
         if: runner.os == 'macOS'
         run: |
-          security import build/electron-dev-cert.p12 -k ~/Library/Keychains/login.keychain-db -P "" -T /usr/bin/codesign
+          security import build/electron-dev-cert.p12 -k ~/Library/Keychains/login.keychain-db -P "fntv123456" -T /usr/bin/codesign
         continue-on-error: true
 
       - name: Build application
