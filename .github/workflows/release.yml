@@ -115,6 +115,12 @@ jobs:
         run: npm run compile
         timeout-minutes: 5
 
+      - name: Import macOS certificate
+        if: runner.os == 'macOS'
+        run: |
+          security import build/electron-dev-cert.p12 -k ~/Library/Keychains/login.keychain-db -P "" -T /usr/bin/codesign
+        continue-on-error: true
+
       - name: Build application
         run: |
           if [ "${{ matrix.platform }}" = "windows" ]; then
@@ -185,7 +191,6 @@ jobs:
             
             ### 📦 构建信息
             - **提交哈希**: `${{ steps.commit.outputs.sha }}`
-            - **提交信息**: ${{ steps.commit.outputs.message }}
             - **提交作者**: ${{ steps.commit.outputs.author }}
             - **构建时间**: ${{ steps.commit.outputs.date }}
             - **源分支**: `release`
