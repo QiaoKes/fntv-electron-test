@@ -10,13 +10,14 @@
         "clean": "rimraf dest",
         "build": "tsc && electron-builder",
         "build:win": "tsc && electron-builder --win",
-        "build:mac": "tsc && electron-builder --mac",
+        "build:mac": "npm run setup:signing && tsc && electron-builder --mac",
         "build:linux": "tsc && electron-builder --linux",
         "build:all": "tsc && electron-builder --win --mac --linux",
         "build:mac-arm64": "tsc && electron-builder --mac --arm64",
         "build:mac-x64": "tsc && electron-builder --mac --x64",
         "build:linux-arm64": "tsc && electron-builder --linux --arm64",
-        "build:linux-x64": "tsc && electron-builder --linux --x64"
+        "build:linux-x64": "tsc && electron-builder --linux --x64",
+        "setup:signing": "bash scripts/setup-macos-signing.sh"
     },
     "author": "tracing",
     "devDependencies": {
@@ -87,10 +88,12 @@
             ],
             "category": "public.app-category.entertainment",
             "icon": "build/icon.icns",
-            "hardenedRuntime": true,
+            "hardenedRuntime": false,
             "gatekeeperAssess": false,
             "entitlements": "build/entitlements.mac.plist",
             "entitlementsInherit": "build/entitlements.mac.plist",
+            "identity": "Developer ID Application",
+            "type": "development",
             "extraFiles": [
                 {
                     "from": "third_party/fntv-mpv/portable_config",
@@ -103,24 +106,24 @@
         },
         "dmg": {
             "title": "飞牛影视 ${version}",
-            "iconSize": 100,
-            "contents": [
-                {
-                    "x": 380,
-                    "y": 280,
-                    "type": "link",
-                    "path": "/Applications"
-                },
-                {
-                    "x": 110,
-                    "y": 280,
-                    "type": "file"
-                }
-            ],
+            "icon": "build/icon.icns",
+            "background": "build/dmg-background.png",
             "window": {
                 "width": 540,
                 "height": 380
-            }
+            },
+            "contents": [
+                {
+                    "x": 130,
+                    "y": 220
+                },
+                {
+                    "x": 410,
+                    "y": 220,
+                    "type": "link",
+                    "path": "/Applications"
+                }
+            ]
         },
         "linux": {
             "target": [
